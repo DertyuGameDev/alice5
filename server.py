@@ -2,6 +2,13 @@
 import logging
 from flask import Flask, request, jsonify
 
+# создаём приложение
+# мы передаём __name__, в нём содержится информация,
+# в каком модуле мы находимся.
+# В данном случае там содержится '__main__',
+# так как мы обращаемся к переменной из запущенного модуля.
+# если бы такое обращение, например, произошло внутри модуля logging,
+# то мы бы получили 'logging'
 app = Flask(__name__)
 
 # Устанавливаем уровень логирования
@@ -45,6 +52,7 @@ def main():
     # непосредственно за ведение диалога
     handle_dialog(request.json, response)
 
+    # Преобразовываем в JSON и возвращаем
     return jsonify(response)
 
 
@@ -54,41 +62,41 @@ def handle_dialog(request_dict, response):
     if request_dict['session']['new']:  # кнопки
         sessionStorage[user_id] = {
             'suggests': [
-                "Не хочу!",
-                "Не буду!",
+                "слышь, ты... *******, отстань от меня, бот",
+                "Не буду",
                 "Отстань!",
-                "Неее!"
             ]
         }
 
-        response['response']['text'] = 'Салюют! Купи слона!'
+        response['response']['text'] = 'Ас-саляму алейкум! Купи слона!'
         response['response']['buttons'] = get_suggests(user_id)
         return
 
     else:
+
+        # Сюда дойдем только, если пользователь не новый,
+        # и разговор с Алисой уже был начат
+        # Обрабатываем ответ пользователя.
+        # В req['request']['original_utterance'] лежит весь текст,
+        # что нам прислал пользователь
+        # Если он написал 'ладно', 'куплю', 'покупаю', 'хорошо',
+        # то мы считаем, что пользователь согласился.
+
         if request_dict['request']['original_utterance'].lower() in ['ладно', 'куплю', 'покупаю', 'хорошо']:
+            # пользователь согласился
             response['response'][
                 'text'] = 'Слона можно найти на Яндекс.Маркете! \nhttps://market.yandex.ru/search?text=слон'
             response['response']['end_session'] = True
             return
-        elif request_dict['request']['original_utterance'].lower() in ['помощь']:
-            response['response'][
-                'text'] = 'Навык пытается убедить купить слона. \n' \
-                          'Для согласия можно написать: "ладно", "куплю", "покупаю", "хорошо".'
-            response['response']['buttons'] = get_suggests(user_id)
-
-        elif 'что ты умеешь' in request_dict['request']['original_utterance'].lower():
-            response['response'][
-                'text'] = "Я умею настойчиво убеждать купить слона, купи слона!"
-            response['response']['buttons'] = get_suggests(user_id)
         else:
+            # Если не согласился, то убеждаем его купить слона!
             response['response']['text'] = \
                 f"Все говорят '{request_dict['request']['original_utterance']}', а ты купи слона!"
             response['response']['buttons'] = get_suggests(user_id)
 
 
+# Функция возвращает две подсказки для ответа.
 def get_suggests(user_id):
-    """ функция возвращает подсказки для пользователя """
     session = sessionStorage[user_id]
 
     # Выбираем две первые подсказки из массива.
@@ -101,18 +109,9 @@ def get_suggests(user_id):
     session['suggests'] = session['suggests'][1:]
     sessionStorage[user_id] = session
 
-    suggests.append({
-        'title': 'Помощь',
-        'hide': True
-    })
-
-    suggests.append({
-        'title': 'Что ты умеешь?',
-        'hide': True
-    })
-
-    # предлагаем подсказку со ссылкой на Яндекс.Маркет.
-    if len(suggests) < 4:
+    # Если осталась только одна подсказка, предлагаем подсказку
+    # со ссылкой на Яндекс.Маркет.
+    if len(suggests) < 2:
         suggests.append({
             "title": "Ладно",
             "url": "https://market.yandex.ru/search?text=слон",
