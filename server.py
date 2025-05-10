@@ -62,7 +62,7 @@ def handle_dialog(request_dict, response):
     if request_dict['session']['new']:  # кнопки
         sessionStorage[user_id] = {
             'suggests': [
-                "слышь, ты... *******, отстань от меня, бот",
+                "Иди нах",
                 "Не буду",
                 "Отстань!",
             ]
@@ -79,10 +79,12 @@ def handle_dialog(request_dict, response):
         # Обрабатываем ответ пользователя.
         # В req['request']['original_utterance'] лежит весь текст,
         # что нам прислал пользователь
-        # Если он написал 'ладно', 'куплю', 'покупаю', 'хорошо',
+        # Если он написал 'ладно', 'куплю', 'покупаю', 'хорошо' или другие фразы из списка,
         # то мы считаем, что пользователь согласился.
 
-        if request_dict['request']['original_utterance'].lower() in ['ладно', 'куплю', 'покупаю', 'хорошо']:
+        if request_dict['request']['original_utterance'].lower() in ['ладно', 'куплю', 'покупаю', 'хорошо',
+                                                                     'я покупаю', 'я куплю', 'я куплю ёпта', 'давай',
+                                                                     'ну давай', 'ща отберу, дай сюда']:
             # пользователь согласился
             response['response'][
                 'text'] = 'Слона можно найти на Яндекс.Маркете! \nhttps://market.yandex.ru/search?text=слон'
