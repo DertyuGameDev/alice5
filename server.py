@@ -1,14 +1,9 @@
 # импортируем библиотеки
 import logging
 from flask import Flask, request, jsonify
+import pymorphy3
 
-# создаём приложение
-# мы передаём __name__, в нём содержится информация,
-# в каком модуле мы находимся.
-# В данном случае там содержится '__main__',
-# так как мы обращаемся к переменной из запущенного модуля.
-# если бы такое обращение, например, произошло внутри модуля logging,
-# то мы бы получили 'logging'
+morph = pymorphy3.MorphAnalyzer()
 app = Flask(__name__)
 
 # Устанавливаем уровень логирования
@@ -25,6 +20,7 @@ logging.basicConfig(level=logging.INFO)
 # Когда он откажется купить слона,
 # то мы уберем одну подсказку. Как будто что-то меняется :)
 sessionStorage = {}
+sessionStorage["cur_animal"] = 'слон'
 
 
 @app.route('/post', methods=['POST'])
@@ -52,7 +48,6 @@ def main():
     # непосредственно за ведение диалога
     handle_dialog(request.json, response)
 
-    # Преобразовываем в JSON и возвращаем
     return jsonify(response)
 
 
@@ -60,45 +55,73 @@ def handle_dialog(request_dict, response):
     user_id = request_dict['session']['user_id']
 
     if request_dict['session']['new']:  # кнопки
+
         sessionStorage[user_id] = {
             'suggests': [
-                "Иди нах",
-                "Не буду",
-                "Отстань!",
+                "Не хочу!",
+                "Не буду!",
+                "Не куплю!"
             ]
         }
-
-        response['response']['text'] = 'Ас-саляму алейкум! Купи слона!'
+        animal = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
+        response['response']['text'] = f'Салюют! Купи {animal}!'
         response['response']['buttons'] = get_suggests(user_id)
         return
 
     else:
-
-        # Сюда дойдем только, если пользователь не новый,
-        # и разговор с Алисой уже был начат
-        # Обрабатываем ответ пользователя.
-        # В req['request']['original_utterance'] лежит весь текст,
-        # что нам прислал пользователь
-        # Если он написал 'ладно', 'куплю', 'покупаю', 'хорошо' или другие фразы из списка,
-        # то мы считаем, что пользователь согласился.
-
         if request_dict['request']['original_utterance'].lower() in ['ладно', 'куплю', 'покупаю', 'хорошо',
                                                                      'я покупаю', 'я куплю', 'я куплю ёпта', 'давай',
                                                                      'ну давай', 'ща отберу, дай сюда']:
             # пользователь согласился
+            match sessionStorage["cur_animal"]:
+                case 'слон':
+                    text_rabbit = "А теперь купи кролика)"
+                case 'кролик':
+                    text_rabbit = ""
+            animal = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
             response['response'][
-                'text'] = 'Слона можно найти на Яндекс.Маркете! \nhttps://market.yandex.ru/search?text=слон'
-            response['response']['end_session'] = True
+                'text'] = f'{animal} можно найти на Яндекс.Маркете! ' \
+                          f'\nhttps://market.yandex.ru/search?text={sessionStorage["cur_animal"]}\n\n ' \
+                          f'{text_rabbit}'
+
+            if sessionStorage["cur_animal"] == 'кролик':
+                response['response']['end_session'] = True
+                sessionStorage["cur_animal"] = 'слон'
+
+            else:
+                sessionStorage["cur_animal"] = 'кролик'
+                sessionStorage[user_id] = {
+                    'suggests': [
+                        "Не хочу!",
+                        "Неее!",
+                        "Не куплю!"
+                    ]
+                }
+                response['response']['buttons'] = get_suggests(user_id)
             return
+
+        elif request_dict['request']['original_utterance'].lower() in ['помощь']:
+            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
+            response['response'][
+                'text'] = f'Навык пытается убедить купить {text_animal_buy}. \n' \
+                          'Для согласия можно написать: "ладно", "куплю", "покупаю", "хорошо".'
+            response['response']['buttons'] = get_suggests(user_id)
+
+        elif 'что ты умеешь' in request_dict['request']['original_utterance'].lower():
+            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
+            response['response'][
+                'text'] = f"Я умею настойчиво убеждать купить {text_animal_buy}, купи {text_animal_buy}!"
+            response['response']['buttons'] = get_suggests(user_id)
+
         else:
-            # Если не согласился, то убеждаем его купить слона!
+            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
             response['response']['text'] = \
-                f"Все говорят '{request_dict['request']['original_utterance']}', а ты купи слона!"
+                f"Все говорят '{request_dict['request']['original_utterance']}', а ты купи {text_animal_buy}!"
             response['response']['buttons'] = get_suggests(user_id)
 
 
-# Функция возвращает две подсказки для ответа.
 def get_suggests(user_id):
+    """ функция возвращает подсказки для пользователя """
     session = sessionStorage[user_id]
 
     # Выбираем две первые подсказки из массива.
@@ -111,14 +134,30 @@ def get_suggests(user_id):
     session['suggests'] = session['suggests'][1:]
     sessionStorage[user_id] = session
 
-    # Если осталась только одна подсказка, предлагаем подсказку
-    # со ссылкой на Яндекс.Маркет.
-    if len(suggests) < 2:
-        suggests.append({
-            "title": "Ладно",
-            "url": "https://market.yandex.ru/search?text=слон",
-            "hide": True
-        })
+    suggests.append({
+        'title': 'Помощь',
+        'hide': True
+    })
+
+    suggests.append({
+        'title': 'Что ты умеешь?',
+        'hide': True
+    })
+
+    # предлагаем подсказку со ссылкой на Яндекс.Маркет.
+    if len(suggests) < 4:
+        match sessionStorage["cur_animal"]:
+            case 'слон':
+                suggests.append({
+                    "title": "Ладно",
+                    "hide": True
+                })
+            case 'кролик':
+                suggests.append({
+                    "title": "Ладно",
+                    "hide": True,
+                    "url": "https://market.yandex.ru/search?text=кролик"
+                })
     return suggests
 
 
