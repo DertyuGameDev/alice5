@@ -1,168 +1,228 @@
-# импортируем библиотеки
-import logging
 from flask import Flask, request, jsonify
-import pymorphy3
+import logging
+import random
 
-morph = pymorphy3.MorphAnalyzer()
 app = Flask(__name__)
 
-# Устанавливаем уровень логирования
 logging.basicConfig(level=logging.INFO)
 
-# Создадим словарь, чтобы для каждой сессии общения
-# с навыком хранились подсказки, которые видел пользователь.
-# Это поможет нам немного разнообразить подсказки ответов
-# (buttons в JSON ответа).
-# Когда новый пользователь напишет нашему навыку,
-# то мы сохраним в этот словарь запись формата
-# sessionStorage[user_id] = {'suggests': ["Не хочу.", "Не буду.", "Отстань!" ]}
-# Такая запись говорит, что мы показали пользователю эти три подсказки.
-# Когда он откажется купить слона,
-# то мы уберем одну подсказку. Как будто что-то меняется :)
+cities = {
+    'москва': ['1030494/a947f3d4e2bce84221ae', '1030494/2948641ff2f33e26b725'],
+    'нью-йорк': ['1030494/6699365299eeeca58801', '997614/ad55b500037a9f30252c'],
+    'париж': ['997614/e9f3dcf28d2c48a9512c', '1656841/e42df0dc56a2cb6872ba']
+}
+
 sessionStorage = {}
-sessionStorage["cur_animal"] = 'слон'
 
 
 @app.route('/post', methods=['POST'])
 def main():
-    # Функция получает тело запроса и возвращает ответ.
-    # Внутри функции доступен request.json - это JSON,
-    # который отправила нам Алиса в запросе POST
-
-    logging.info(f'Request: {request.json!r}')
-
-    # Начинаем формировать ответ, согласно документации
-    # мы собираем словарь, который потом отдадим Алисе
+    logging.info('Request: %r', request.json)
     response = {
-        "session": request.json["session"],
-        "version": request.json["version"],
-        "response": {
-            "end_session": False
+        'session': request.json['session'],
+        'version': request.json['version'],
+        'response': {
+            'end_session': False
         }
     }
-
-    logging.info(f'Response:  {response!r}')
-
-    # Отправляем request.json и response в функцию handle_dialog.
-    # Она сформирует оставшиеся поля JSON, которые отвечают
-    # непосредственно за ведение диалога
-    handle_dialog(request.json, response)
-
+    handle_dialog(response, request.json)
+    logging.info('Response: %r', response)
     return jsonify(response)
 
 
-def handle_dialog(request_dict, response):
-    user_id = request_dict['session']['user_id']
-
-    if request_dict['session']['new']:  # кнопки
-
-        sessionStorage[user_id] = {
-            'suggests': [
-                "Не хочу!",
-                "Не буду!",
-                "Не куплю!"
-            ]
-        }
-        animal = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
-        response['response']['text'] = f'Салюют! Купи {animal}!'
-        response['response']['buttons'] = get_suggests(user_id)
+def handle_dialog(res, req):
+    res['response']['buttons'] = []
+    user_id = req['session']['user_id']
+    if 'помощь' in req['request']['original_utterance'].lower():
+        res['response']['text'] = 'Данный навык играет в угадайку городов по картинке'
+        res['response']['buttons'] = [{
+            'title': 'Продолжить',
+            'hide': True
+        }]
         return
 
-    else:
-        if request_dict['request']['original_utterance'].lower() in ['ладно', 'куплю', 'покупаю', 'хорошо',
-                                                                     'я покупаю', 'я куплю', 'я куплю ёпта', 'давай',
-                                                                     'ну давай', 'ща отберу, дай сюда']:
-            # пользователь согласился
-            match sessionStorage["cur_animal"]:
-                case 'слон':
-                    text_rabbit = "А теперь купи кролика)"
-                case 'кролик':
-                    text_rabbit = ""
-            animal = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
-            response['response'][
-                'text'] = f'{animal} можно найти на Яндекс.Маркете! ' \
-                          f'\nhttps://market.yandex.ru/search?text={sessionStorage["cur_animal"]}\n\n ' \
-                          f'{text_rabbit}'
+    if 'что ты умеешь' in req['request']['original_utterance'].lower():
+        res['response']['text'] = 'Данный навык умеет играть с тобой в угадайку с городами по картинке'
+        res['response']['buttons'] = [{
+            'title': 'Продолжить',
+            'hide': True
+        }]
+        return
 
-            if sessionStorage["cur_animal"] == 'кролик':
-                response['response']['end_session'] = True
-                sessionStorage["cur_animal"] = 'слон'
-
-            else:
-                sessionStorage["cur_animal"] = 'кролик'
-                sessionStorage[user_id] = {
-                    'suggests': [
-                        "Не хочу!",
-                        "Неее!",
-                        "Не куплю!"
-                    ]
-                }
-                response['response']['buttons'] = get_suggests(user_id)
-            return
-
-        elif request_dict['request']['original_utterance'].lower() in ['помощь']:
-            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
-            response['response'][
-                'text'] = f'Навык пытается убедить купить {text_animal_buy}. \n' \
-                          'Для согласия можно написать: "ладно", "куплю", "покупаю", "хорошо".'
-            response['response']['buttons'] = get_suggests(user_id)
-
-        elif 'что ты умеешь' in request_dict['request']['original_utterance'].lower():
-            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
-            response['response'][
-                'text'] = f"Я умею настойчиво убеждать купить {text_animal_buy}, купи {text_animal_buy}!"
-            response['response']['buttons'] = get_suggests(user_id)
-
+    if 'продолжить' in req['request']['original_utterance'].lower():
+        res['response']['text'] = 'Продолжаем. Возвращаемся к моей фразе, не связанной с пояснительной информацией)'
+        return
+    if 'покажи город на карте' in req['request']['original_utterance'].lower():
+        if len(
+                sessionStorage[user_id]['guessed_cities']) != 3:
+            res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Будешь угадывать следующий город?'
+            res['response']['buttons'].append(
+                {
+                    'title': 'Да',
+                    'hide': True
+                })
+            res['response']['buttons'].append(
+                {
+                    'title': 'Нет',
+                    'hide': True
+                })
         else:
-            text_animal_buy = morph.parse(sessionStorage["cur_animal"])[0].inflect({'gent'}).word
-            response['response']['text'] = \
-                f"Все говорят '{request_dict['request']['original_utterance']}', а ты купи {text_animal_buy}!"
-            response['response']['buttons'] = get_suggests(user_id)
+            res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Красава! Отгадал все города'
+            sessionStorage[user_id]['game_started'] = False
+            res['response']['end_session'] = True
+        return
 
+    if req['session']['new']:
+        res['response']['text'] = 'Привет! Назови своё имя!'
+        sessionStorage[user_id] = {
+            'first_name': None,
+            'game_started': False
+        }
+        return
 
-def get_suggests(user_id):
-    """ функция возвращает подсказки для пользователя """
-    session = sessionStorage[user_id]
-
-    # Выбираем две первые подсказки из массива.
-    suggests = [
-        {'title': suggest, 'hide': True}
-        for suggest in session['suggests'][:2]
-    ]
-
-    # Убираем первую подсказку, чтобы подсказки менялись каждый раз, будут показаны другие
-    session['suggests'] = session['suggests'][1:]
-    sessionStorage[user_id] = session
-
-    suggests.append({
+    if sessionStorage[user_id]['first_name'] is None:
+        name_user = get_first_name(req)
+        if name_user is None:
+            res['response']['text'] = 'Не расслышала имя. Повтори, пожалуйста!'
+        else:
+            sessionStorage[user_id]['first_name'] = name_user.capitalize()
+            sessionStorage[user_id]['guessed_cities'] = []
+            res['response']['text'] = f'Приятно познакомиться, {sessionStorage[user_id]["first_name"]}. ' \
+                                      f'Я Алиса. Отгадаешь город по фото?'
+            res['response']['buttons'] = [
+                {
+                    'title': 'Да',
+                    'hide': True
+                },
+                {
+                    'title': 'Нет',
+                    'hide': True
+                }
+            ]
+    else:
+        if not sessionStorage[user_id]['game_started']:
+            if 'да' in req['request']['nlu']['tokens']:
+                if len(sessionStorage[user_id]['guessed_cities']) == 3:
+                    res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Ты лучший, отгадал все города!'
+                    sessionStorage[user_id]['game_started'] = False
+                    res['response']['end_session'] = True
+                else:
+                    sessionStorage[user_id]['game_started'] = True
+                    sessionStorage[user_id]['attempt'] = 1
+                    play_game(res, req)
+            elif 'нет' in req['request']['nlu']['tokens']:
+                res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Ну и ладно!'
+                sessionStorage[user_id]['game_started'] = False
+                res['response']['end_session'] = True
+            else:
+                if len(sessionStorage[user_id]['guessed_cities']) == 3:
+                    res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Ты лучший, отгадал все города!'
+                    sessionStorage[user_id]['game_started'] = False
+                    res['response']['end_session'] = True
+                else:
+                    res['response'][
+                        'text'] = f'{sessionStorage[user_id]["first_name"]}, Не поняла ответа! Так да или нет?'
+                    res['response']['buttons'] = [
+                        {
+                            'title': 'Да',
+                            'hide': True
+                        },
+                        {
+                            'title': 'Нет',
+                            'hide': True
+                        }
+                    ]
+        else:
+            play_game(res, req)
+    res['response']['buttons'].append({
         'title': 'Помощь',
         'hide': True
     })
 
-    suggests.append({
+    res['response']['buttons'].append({
         'title': 'Что ты умеешь?',
         'hide': True
     })
 
-    # предлагаем подсказку со ссылкой на Яндекс.Маркет.
-    if len(suggests) < 4:
-        match sessionStorage["cur_animal"]:
-            case 'слон':
-                suggests.append({
-                    "title": "Ладно",
-                    "hide": True
-                })
-            case 'кролик':
-                suggests.append({
-                    "title": "Ладно",
-                    "hide": True,
-                    "url": "https://market.yandex.ru/search?text=кролик"
-                })
-    return suggests
+
+def play_game(res, req):
+    user_id = req['session']['user_id']
+    attempt = sessionStorage[user_id]['attempt']
+    if len(sessionStorage[user_id]['guessed_cities']) == 3:
+        res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Ты лучший, отгадал все города!'
+        sessionStorage[user_id]['game_started'] = False
+        res['response']['end_session'] = True
+        return
+
+    if attempt == 1:
+        city = random.choice(list(cities))
+        while city in sessionStorage[user_id]['guessed_cities']:
+            city = random.choice(list(cities))
+
+        sessionStorage[user_id]['city'] = city
+        res['response']['card'] = {}
+        res['response']['card']['type'] = 'BigImage'
+        res['response']['card']['title'] = 'Что это за город?'
+        res['response']['card']['image_id'] = cities[city][attempt - 1]
+        res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Тогда сыграем!'
+    else:
+        city = sessionStorage[user_id]['city']
+        if get_city(req) == city:
+            if len(sessionStorage[user_id]['guessed_cities']) < 2:
+                res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Правильно! Сыграем ещё?'
+                res['response']['buttons'] = [
+                    {
+                        'title': 'Да',
+                        'hide': True
+                    },
+                    {
+                        'title': 'Нет',
+                        'hide': True
+                    },
+
+                    {'title': 'Покажи город на карте',
+                     'hide': True,
+                     'url': f'https://yandex.ru/maps/?mode=search&text={city}'}
+                ]
+            else:
+                res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, Лучший! Отгадал все города'
+                res['response']['buttons'].append(
+                    {'title': 'Покажи город на карте',
+                     'hide': True,
+                     'url': f'https://yandex.ru/maps/?mode=search&text={city}'}
+                )
+            sessionStorage[user_id]['guessed_cities'].append(city)
+            sessionStorage[user_id]['game_started'] = False
+            return
+        else:
+            if attempt == 3:
+                res['response'][
+                    'text'] = f'{sessionStorage[user_id]["first_name"]}, Вы пытались. Это {city.title()}. Сыграем ещё?'
+
+                sessionStorage[user_id]['game_started'] = False
+                sessionStorage[user_id]['guessed_cities'].append(city)
+                return
+            else:
+                res['response']['card'] = {}
+                res['response']['card']['type'] = 'BigImage'
+                res['response']['card'][
+                    'title'] = f'{sessionStorage[user_id]["first_name"]}, Неправильно. Вот тебе дополнительное фото'
+                res['response']['card']['image_id'] = cities[city][attempt - 1]
+                res['response']['text'] = f'{sessionStorage[user_id]["first_name"]}, А вот и не угадал!'
+    sessionStorage[user_id]['attempt'] += 1
 
 
-if __name__ == "__main__":
+def get_city(req):
+    for entity in req['request']['nlu']['entities']:
+        if entity['type'] == 'YANDEX.GEO':
+            return entity['value'].get('city', None)
+
+
+def get_first_name(req):
+    for entity in req['request']['nlu']['entities']:
+        if entity['type'] == 'YANDEX.FIO':
+            return entity['value'].get('first_name', None)
+
+
+if __name__ == '__main__':
     app.run()
-
-# xTunnel -k 04554c4c74204ea984c2d743e011edec
-# xTunnel 5000
